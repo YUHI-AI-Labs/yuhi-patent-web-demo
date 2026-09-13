@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Yuhi Patent — CAD検索デモ</title>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=Noto+Sans+JP:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{--ink:#111A2E;--blue:#2E6AD1;--line:#D6DEED;--muted:#5B6580;--ok:#1c6b41;--paper:#F4F7FC}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:"Noto Sans JP",sans-serif;line-height:1.7}
+  .wrap{max-width:760px;margin:0 auto;padding:48px 20px 80px}
+  h1{font-family:"Sora",sans-serif;font-weight:800;font-size:1.7rem;letter-spacing:-.02em}
+  p.lede{color:var(--muted);font-size:14px;margin-top:10px;max-width:56ch}
+  .note{margin-top:16px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 16px;font-size:12.5px;color:var(--muted)}
+  #drop{margin-top:28px;border:1.5px dashed var(--line);border-radius:16px;padding:44px 24px;text-align:center;background:#fff;cursor:pointer;transition:.15s}
+  #drop.drag{border-color:var(--blue);background:#eef4fd}
+  #drop b{display:block;font-family:"Sora",sans-serif;font-weight:700;font-size:1.05rem}
+  #drop .fmt{margin-top:10px;font-family:"IBM Plex Mono",monospace;font-size:11px;color:var(--muted)}
+  #fileInput{display:none}
+  #status{margin-top:20px;font-family:"IBM Plex Mono",monospace;font-size:13px;color:var(--muted)}
+  #error{margin-top:16px;background:#fdf3f3;border:1px solid #f3c9c9;color:#9b3b3b;border-radius:10px;padding:14px 16px;font-size:13px}
+  #result{margin-top:28px}
+  .chiprow{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+  .chip{background:#EEF4FD;border:1px solid #D6E4FA;border-radius:999px;padding:5px 12px;font-family:"IBM Plex Mono",monospace;font-size:12px;color:var(--blue)}
+  .card{border:1px solid var(--line);border-radius:14px;padding:20px 22px;background:#fff;margin-top:14px}
+  .card .num{font-family:"IBM Plex Mono",monospace;font-size:11px;color:#7A8299}
+  .card h4{font-family:"Sora",sans-serif;font-size:1rem;margin:4px 0 0}
+  .card .abs{font-size:12.5px;color:var(--muted);margin-top:8px}
+  .badges{margin-top:12px;display:flex;flex-direction:column;gap:6px}
+  .brow{display:flex;justify-content:space-between;gap:12px;font-size:12.5px;padding:7px 0;border-top:1px solid #E4E9F3}
+  .brow:first-child{border-top:none}
+  .badge{font-family:"IBM Plex Mono",monospace;font-size:10px;border-radius:999px;padding:3px 9px;white-space:nowrap}
+  .badge.hit{background:#EAF6EF;color:var(--ok)}
+  .badge.partial{background:#FDF3E3;color:#a3660c}
+  .badge.miss{background:#E9EEF8;color:#7A8299}
+  a.back{display:inline-block;margin-top:36px;font-size:13px;color:var(--blue)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🔍 Yuhi Patent — CAD検索デモ</h1>
+  <p class="lede">STEP または STL ファイルをアップロードすると、実際のCAD解析エンジンで構成部品を読み取り、実際のJPO公報データ（約3.7万件）から関連しそうな公報を検索します。</p>
+  <div class="note">
+    このデモにはAIによる意味推定（日本語での部品名の解釈）は入っていません。アップロードしたファイル自身の部品名（多くの場合、英語）から簡易な英日対応表で検索語を作るため、命名によっては結果が出ないことがあります。判定バッジも簡易な文字列一致であり、本製品の請求項レベルの比較とは異なります。<br>
+    アップロードしたファイルは解析後すぐに削除され、保存されません。20MBまで。
+  </div>
+
+  <div id="drop">
+    <b>CAD（STEP / STL）をここにドロップ、またはクリックして選択</b>
+    <div class="fmt">.step · .stp · .stl · 20MBまで</div>
+    <input type="file" id="fileInput" accept=".step,.stp,.stl">
+  </div>
+
+  <div id="status" style="display:none"></div>
+  <div id="error" style="display:none"></div>
+  <div id="result"></div>
+
+  <a class="back" href="https://yuhi-ai-labs.vercel.app/projects/yuhi-patent">← Yuhi Patent 製品ページへ</a>
+</div>
+
+<script>
+const drop = document.getElementById('drop');
+const fileInput = document.getElementById('fileInput');
+const statusEl = document.getElementById('status');
+const errorEl = document.getElementById('error');
+const resultEl = document.getElementById('result');
+
+drop.addEventListener('click', () => fileInput.click());
+drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('drag'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('drag'));
+drop.addEventListener('drop', (e) => {
+  e.preventDefault();
+  drop.classList.remove('drag');
+  if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files.length) handleFile(fileInput.files[0]);
+});
+
+async function handleFile(file) {
+  errorEl.style.display = 'none';
+  resultEl.innerHTML = '';
+  statusEl.style.display = 'block';
+  statusEl.textContent = 'アップロード中... ' + file.name;
+
+  const form = new FormData();
+  form.append('file', file);
+
+  try {
+    statusEl.textContent = 'CADを解析しています（数秒〜30秒程度）...';
+    const res = await fetch('/api/analyze', { method: 'POST', body: form });
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.detail || '解析に失敗しました。');
+    }
+    statusEl.style.display = 'none';
+    render(data);
+  } catch (err) {
+    statusEl.style.display = 'none';
+    errorEl.style.display = 'block';
+    errorEl.textContent = err.message || '解析に失敗しました。';
+  }
+}
+
+function render(data) {
+  const parts = [];
+  parts.push(`<h3 style="font-family:Sora,sans-serif">構成部品（${data.components.length}件）</h3>`);
+  parts.push(`<div class="chiprow">${data.components.map(c => `<span class="chip">${escapeHtml(c)}</span>`).join('')}</div>`);
+  parts.push(`<h3 style="font-family:Sora,sans-serif;margin-top:24px">検索語（${data.search_terms.length}件）</h3>`);
+  parts.push(`<div class="chiprow">${data.search_terms.map(t => `<span class="chip">${escapeHtml(t)}</span>`).join('') || '<span class="chip">検索語を生成できませんでした</span>'}</div>`);
+
+  parts.push(`<h3 style="font-family:Sora,sans-serif;margin-top:24px">検索結果（${data.results.length}件）</h3>`);
+  if (data.results.length === 0) {
+    parts.push(`<p style="color:#5B6580;font-size:13px">一致する公報が見つかりませんでした。英語の部品名が多い場合、検索語が実際の日本語の記載と一致しにくいことがあります。</p>`);
+  }
+  for (const r of data.results) {
+    const badgeRows = Object.entries(r.badges).map(([name, badge]) => {
+      const label = badge === 'hit' ? '一致' : badge === 'partial' ? '部分的に一致' : '該当なし';
+      return `<div class="brow"><span>${escapeHtml(name)}</span><span class="badge ${badge}">${label}</span></div>`;
+    }).join('');
+    parts.push(`
+      <div class="card">
+        <div class="num">${escapeHtml(r.publication_number)}</div>
+        <h4>${escapeHtml(r.title)}</h4>
+        <div class="abs">${escapeHtml(r.abstract)}...</div>
+        <div class="badges">${badgeRows}</div>
+      </div>
+    `);
+  }
+  resultEl.innerHTML = parts.join('');
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+[project]
+name = "yuhi-cad"
+version = "0.1.0"
+description = "Deterministic CAD analysis worker for Yuhi Patent"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+# CadQuery/OCP carry OpenCascade and are only needed for STEP/DXF B-Rep work.
+# The mesh path (STL) and the CLI contract work without them.
+step = ["cadquery>=2.4", "cadquery-ocp>=7.7"]
+render = ["trimesh>=4.0", "pillow>=10.0", "numpy>=1.26"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+yuhi-cad = "yuhi_cad.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["yuhi_cad*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

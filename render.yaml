@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: yuhi-patent-cad-search
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    plan: starter
+    envVars:
+      - key: PORT
+        value: 8080
